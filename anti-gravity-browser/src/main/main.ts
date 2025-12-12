@@ -1,9 +1,14 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
+import { app, BrowserWindow, ipcMain, BrowserView } from 'electron'
+import { join } from 'path'
+import { fileURLToPath } from 'url'
+import path from 'path'
 import { WindowManager } from './browser/WindowManager'
+import { AgentRuntime } from './agent/AgentRuntime'
+import dotenv from 'dotenv'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config()
+
+const __dirname = join(fileURLToPath(import.meta.url), '..')
 
 // The built directory structure
 //
@@ -41,6 +46,18 @@ app.on('activate', () => {
     }
 })
 
+// --- AUTO-TEST: Trigger Zomato Goal automatically ---
+setTimeout(() => {
+    console.log('[Auto-Test] Triggering Zomato Goal...')
+    const view = windowManager?.getActiveView()
+    if (view) {
+        agent.runGoal('open zomato and add briyani to the cart', view.webContents, (data) => {
+            console.log('[Auto-Test Agent Status]', data)
+        })
+    }
+}, 5000)
+// --------------------------------------------------
+
 // IPC handlers for UI interactions
 ipcMain.handle('browser:new-tab', (event, url) => {
     windowManager?.createTab(url)
@@ -50,17 +67,39 @@ ipcMain.handle('browser:switch-tab', (event, id) => {
     windowManager?.switchTab(id)
 })
 
-import { AgentRuntime } from './agent/AgentRuntime'
+ipcMain.handle('browser:back', () => {
+    windowManager?.goBack()
+})
+
+ipcMain.handle('browser:forward', () => {
+    windowManager?.goForward()
+})
+
+ipcMain.handle('browser:reload', () => {
+    windowManager?.reload()
+})
+
 const agent = new AgentRuntime()
 
 ipcMain.handle('agent:run-goal', async (event, goal) => {
     console.log('Received agent goal:', goal)
-    const view = windowManager?.getActiveView()
+    let view = windowManager?.getActiveView()
+
+    // If no tab exists (first run), create one
+    if (!view) {
+        console.log('[Main] No active view, creating new tab for goal...')
+        windowManager?.createTab('about:blank')
+        view = windowManager?.getActiveView()
+    }
+
     if (view) {
         // Run in background without awaiting to return 'started' status to UI
-        agent.runGoal(goal, view.webContents)
+        agent.runGoal(goal, view.webContents, (data) => {
+            // Forward agent status to the UI (Renderer) which sent the request
+            event.sender.send('agent:status', data)
+        })
         return { status: 'started', goal }
     } else {
-        return { status: 'error', message: 'No active tab' }
+        return { status: 'error', message: 'Failed to create tab' }
     }
 })

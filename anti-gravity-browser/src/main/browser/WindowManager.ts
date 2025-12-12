@@ -27,23 +27,26 @@ export class WindowManager {
             vibrancy: 'fullscreen-ui', // Glass effect
             backgroundMaterial: 'acrylic',
             webPreferences: {
-                preload: path.join(__dirname, '../preload.js'),
+                preload: path.join(__dirname, 'preload.js'),
                 nodeIntegration: false,
                 contextIsolation: true,
             },
         })
 
         if (process.env.VITE_DEV_SERVER_URL) {
+            console.log('[WindowManager] Loading URL:', process.env.VITE_DEV_SERVER_URL)
             await this.mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
         } else {
+            console.log('[WindowManager] Loading File')
             await this.mainWindow.loadFile(path.join(process.env.DIST!, '../renderer/index.html'))
         }
 
-        // Default tab
-        this.createTab('https://www.google.com')
+        // Default tab - DISABLED to show UI first
+        // this.createTab('https://www.google.com')
 
         this.mainWindow.on('resize', () => {
-            this.updateActiveViewBounds()
+            // Debounce slightly
+            setTimeout(() => this.updateActiveViewBounds(), 10)
         })
     }
 
@@ -70,6 +73,10 @@ export class WindowManager {
         })
 
         this.switchTab(id)
+
+        // Force update bounds shortly after creation
+        setTimeout(() => this.updateActiveViewBounds(), 100)
+
         return id
     }
 
@@ -94,23 +101,62 @@ export class WindowManager {
         const view = this.views.get(this.activeViewId)
         if (!view) return
 
-        const bounds = this.mainWindow.getBounds()
+        const [width, height] = this.mainWindow.getContentSize()
+        console.log(`[WindowManager] Updating bounds: w=${width}, h=${height}`)
 
         // Reserve top 80px for UI (Address Bar etc)
         const topBarHeight = 80
         // Reserve right side for Agent Sidebar (optional)
         const sidebarWidth = 0
 
-        view.setBounds({
+        const bounds = {
             x: 0,
             y: topBarHeight,
-            width: bounds.width - sidebarWidth,
-            height: bounds.height - topBarHeight
-        })
+            width: width - sidebarWidth,
+            height: height - topBarHeight
+        }
+
+        console.log('[WindowManager] Setting view bounds:', bounds)
+        view.setBounds(bounds)
+        view.setBackgroundColor('#ffffff') // Force white background
+
+        // Ensure it's on top again just in case
+        this.mainWindow.setTopBrowserView(view)
     }
 
     getActiveView() {
         if (!this.activeViewId) return null
         return this.views.get(this.activeViewId)
+    }
+
+    goBack() {
+        console.log(`[WindowManager] goBack called. ActiveID: ${this.activeViewId}, Total Views: ${this.views.size}`)
+        const view = this.getActiveView()
+        if (view) {
+            console.log('[WindowManager] Active View found, canGoBack:', view.webContents.canGoBack())
+            if (view.webContents.canGoBack()) {
+                view.webContents.goBack()
+            }
+        } else {
+            console.error('[WindowManager] ERROR: No Active View found for goBack!')
+        }
+    }
+
+    goForward() {
+        console.log(`[WindowManager] goForward called. ActiveID: ${this.activeViewId}`)
+        const view = this.getActiveView()
+        if (view && view.webContents.canGoForward()) {
+            view.webContents.goForward()
+        }
+    }
+
+    reload() {
+        console.log(`[WindowManager] reload called. ActiveID: ${this.activeViewId}`)
+        const view = this.getActiveView()
+        if (view) {
+            view.webContents.reload()
+        } else {
+            console.error('[WindowManager] ERROR: No Active View found for reload!')
+        }
     }
 }

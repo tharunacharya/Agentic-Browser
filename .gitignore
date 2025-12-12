@@ -34,3 +34,8 @@ release
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Scripts and temporary files
+scripts/
+coverage/
+*.json.log

@@ -15,7 +15,7 @@ export class AgentRuntime {
         this.planner = new Planner()
     }
 
-    async runGoal(goal: string, webContents: WebContents) {
+    async runGoal(goal: string, webContents: WebContents, onStatus: (data: { status: string, log: string }) => void) {
         if (this.isRunning) {
             console.warn('Agent already running')
             return
@@ -37,34 +37,45 @@ export class AgentRuntime {
             }
 
             // Initial Observation
+            onStatus({ status: 'observing', log: 'Reading page content...' })
             await this.observer.observe(webContents)
 
             // Planning Loop (Simplified for scaffolding)
             let completed = false
             while (!completed && this.isRunning) {
+                onStatus({ status: 'planning', log: 'Planning next step...' })
                 console.log('[Agent] Planning next step...')
                 const plan = await this.planner.getNextAction(goal, this.observer.lastState)
 
                 if (plan.action === 'finish') {
                     console.log('[Agent] Goal completed!')
+                    onStatus({ status: 'idle', log: 'Goal completed!' })
                     completed = true
+                } else if (plan.action === 'error') {
+                    console.error('[Agent] Planner error:', plan.message)
+                    onStatus({ status: 'error', log: `AI Error: ${plan.message}` })
+                    break
                 } else if (plan.action) {
                     console.log(`[Agent] Executing: ${plan.action}`)
+                    onStatus({ status: 'acting', log: `Executing: ${plan.action}` })
                     await this.executor.execute(plan, webContents)
 
                     // Wait for effects
                     await new Promise(r => setTimeout(r, 2000))
 
                     // Re-observe
+                    onStatus({ status: 'observing', log: 'Verifying changes...' })
                     await this.observer.observe(webContents)
                 } else {
                     console.warn('[Agent] No plan generated. Stopping.')
+                    onStatus({ status: 'error', log: 'I am confused.' })
                     break
                 }
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('[Agent] Runtime error:', error)
+            onStatus({ status: 'error', log: `Error: ${error.message || error}` })
         } finally {
             this.isRunning = false
             // Don't detach immediately in case user wants to inspect or continue
